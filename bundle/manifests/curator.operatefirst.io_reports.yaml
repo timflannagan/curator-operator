@@ -120,6 +120,8 @@ spec:
               nextReportTime:
                 format: date-time
                 type: string
+              tableRef:
+                type: string
             type: object
         type: object
     served: true

@@ -82,6 +82,7 @@ type ReportStatus struct {
 	LastReportTime *metav1.Time `json:"lastReportTime,omitempty"`
 	NextReportTime *metav1.Time `json:"nextReportTime,omitempty"`
 	Conditions     string       `json:"conditions,omitempty"`
+	TableRef       string       `json:"tableRef,omitempty"`
 }
 
 //+kubebuilder:object:root=true
