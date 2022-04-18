@@ -93,6 +93,32 @@ func (r *ReportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	nextRunTime := nextReportPeriod.PeriodEnd
 	waitTime := nextRunTime.Sub(now)
 
+	/*
+		TODO:
+		- [x] Create a Report status.tableRef (string?)
+		- [ ] If the report.Status.TableRef != nil: verify the table exists, else created it and update the status
+		- [ ] Else: create the table and update the report.Status.TableRef reference to that created table
+		- [ ] Add support for emulating the select query used in operate-first/curator/apis/scripts/app.py and handle errors
+
+		Steps:
+		- Build up a SQL query that selects data from the logs_0 table based on the Report inputs (e.g. periodStart, periodEnd, namespace, etc.)
+		- Fire off that SQL query using the r.DB client and scan row results
+	*/
+
+	var (
+		reportPeriodStart time.Time
+		reportPeriodEnd   time.Time
+		namespace         string
+		usage             float64
+	)
+	query := "SELECT report_period_start, report_period_end, namespace, pod_usage_cpu_core_seconds FROM logs_2 WHERE namespace='openshift-metering' limit 5;"
+	err = r.DB.QueryRow(ctx, query).Scan(&reportPeriodStart, &reportPeriodEnd, &namespace, &usage)
+	if err != nil {
+		l.Error(err, "failed to exec query", "query", query)
+		return ctrl.Result{}, err
+	}
+	l.Info("query results", "start", reportPeriodStart, "end", reportPeriodEnd, "namespace", namespace, "usage", usage)
+
 	if err := r.Status().Update(ctx, report); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -124,3 +150,30 @@ func requeueReportsHandler(c client.Client, log logr.Logger) handler.EventHandle
 		return res
 	})
 }
+
+// @app.route('/report')
+// def report():
+//     resp = get_report(request.args)  # TODO status code
+//     # print(resp, file=sys.stdout)
+//     if 'reportingStart' in resp['spec'].keys():
+//         sql = "SELECT * FROM logs_2 WHERE interval_start >= '{}'::timestamp with time zone AND interval_end < '{}'::timestamp with time zone "\
+//             .format(resp['spec']['reportingStart'],resp['spec']['reportingEnd'])
+//     else:
+//         offset = 0
+//         if resp['spec']['reportPeriod'].lower() == 'day':
+//             offset = 1
+//         elif resp['spec']['reportPeriod'].lower() == 'week':
+//             offset = 7
+//         elif resp['spec']['reportPeriod'].lower() == 'month':
+//             offset = 30
+//         sql = "SELECT * FROM logs_2 WHERE interval_start >= '{0}'::timestamp with time zone - interval '{1} day' AND interval_end < '{0}'::timestamp with time zone".\
+//             format(resp['spec']['reportingEnd'], offset)
+//     if 'namespace' in resp['spec'].keys():
+//         sql += " AND namespace='{}'".format(resp['spec']['namespace'])
+//     # print(sql, file=sys.stdout)
+//     table = postgres_execute(sql, result=True, header=True)
+//     return jsonify(table)
+//     # df = pd.DataFrame(table[1:])
+//     # df.columns = table[0]
+//     # html_template = Template(TEMPLATE_CONTENT)
+//     # return html_template.render(**{"tables": [df.to_html(classes='data')], "titles": df.columns.values})

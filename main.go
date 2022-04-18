@@ -45,7 +45,7 @@ var (
 )
 
 const (
-	postgresURL = "host=postgresql.test-project.svc  port=5432 user=curator password=M5rBgWkN8LfjeyI8 dbname=curatordb sslmode=disable"
+	postgresURL = "host=localhost  port=5432 user=curator password=M5rBgWkN8LfjeyI8 dbname=curatordb sslmode=disable"
 )
 
 func init() {
