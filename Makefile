@@ -117,7 +117,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 .PHONY: docker-push
@@ -234,7 +234,7 @@ catalog-push: ## Push a catalog image.
 
 verify: tidy generate
 	git diff --exit-code
-	
+
 .PHONY: bin/server
 bin/server:
 	go build -o $@ cmd/server/main.go

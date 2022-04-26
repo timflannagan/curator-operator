@@ -64,23 +64,25 @@ func (r *ReportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	var (
+		requeueReportPeriod bool
+	)
 	now := time.Now().UTC()
 	reportPeriod, err := reporting.GetReportPeriod(now, l, report)
 	if err != nil {
 		return ctrl.Result{}, nil
 	}
-	if reportPeriod.PeriodEnd.After(now) { // @fixme
-		return ctrl.Result{RequeueAfter: reportPeriod.PeriodEnd.Sub(now)}, nil
-	}
-
-	report.Status.LastReportTime = &metav1.Time{Time: reportPeriod.PeriodEnd}
-	if err := r.Status().Update(ctx, report); err != nil {
-		l.Info("reconciling report", "Update Err", err)
-		return ctrl.Result{}, err
+	if requeueReportPeriod {
+		if reportPeriod.PeriodEnd.After(now) { // @fixme
+			l.Info("report period", "next", reportPeriod.PeriodEnd.Sub(now))
+			return ctrl.Result{}, nil // TODO: investigate hotlooping behavior
+		}
 	}
 	if report.Spec.Schedule == nil {
 		return ctrl.Result{}, nil
 	}
+	report.Status.LastReportTime = &metav1.Time{Time: reportPeriod.PeriodEnd}
+
 	reportSchedule, err := reporting.GetSchedule(report.Spec.Schedule)
 	if err != nil {
 		return ctrl.Result{}, err // @fixme empty results ?
@@ -93,27 +95,16 @@ func (r *ReportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	nextRunTime := nextReportPeriod.PeriodEnd
 	waitTime := nextRunTime.Sub(now)
 
-	/*
-		TODO:
-		- [x] Create a Report status.tableRef (string?)
-		- [ ] If the report.Status.TableRef != nil: verify the table exists, else created it and update the status
-		- [ ] Else: create the table and update the report.Status.TableRef reference to that created table
-		- [ ] Add support for emulating the select query used in operate-first/curator/apis/scripts/app.py and handle errors
-
-		Steps:
-		- Build up a SQL query that selects data from the logs_0 table based on the Report inputs (e.g. periodStart, periodEnd, namespace, etc.)
-		- Fire off that SQL query using the r.DB client and scan row results
-	*/
-
 	var (
 		reportPeriodStart time.Time
 		reportPeriodEnd   time.Time
 		namespace         string
 		usage             float64
 	)
+
+	// TODO: 1.65098498264586e+09	ERROR	controller.report	failed to exec query	{"reconciler group": "curator.operatefirst.io", "reconciler kind": "Report", "name": "namespace-cpu-request-report-sample", "namespace": "curator-operator-system", "query": "SELECT report_period_start, report_period_end, namespace, pod_usage_cpu_core_seconds FROM logs_2 WHERE namespace='openshift-metering' limit 5;", "error": "timeout: context canceled"}
 	query := "SELECT report_period_start, report_period_end, namespace, pod_usage_cpu_core_seconds FROM logs_2 WHERE namespace='openshift-metering' limit 5;"
-	err = r.DB.QueryRow(ctx, query).Scan(&reportPeriodStart, &reportPeriodEnd, &namespace, &usage)
-	if err != nil {
+	if err := r.DB.QueryRow(ctx, query).Scan(&reportPeriodStart, &reportPeriodEnd, &namespace, &usage); err != nil {
 		l.Error(err, "failed to exec query", "query", query)
 		return ctrl.Result{}, err
 	}
@@ -122,7 +113,9 @@ func (r *ReportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.Status().Update(ctx, report); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: waitTime}, nil
+
+	l.Info("report period", "requeue", waitTime)
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
